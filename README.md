@@ -1,105 +1,106 @@
-# Controlador Reactivo Follow The Gap — F1TENTH (Brands Hatch)
+# Tutorial: Controlador Follow The Gap para F1TENTH (pista Brands Hatch)
 
-Implementación de un controlador reactivo de navegación autónoma basado en el algoritmo **Follow The Gap (FTG)**, desarrollado para el simulador oficial de F1TENTH sobre ROS2 (Humble), como parte del proyecto del curso de Vehículos Autónomos. El controlador fue probado en la pista **Brands Hatch**.
+Este tutorial te explica cómo funciona mi controlador reactivo **Follow The Gap (FTG)**, cómo está armado el código y cómo ponerlo a correr en el simulador de F1TENTH, sobre la pista **Brands Hatch**. Fue desarrollado para el proyecto del curso de Vehículos Autónomos.
 
----
-
-## Tabla de contenidos
-
-- [1. Descripción del enfoque](#1-descripción-del-enfoque)
-- [2. Estructura del código](#2-estructura-del-código)
-- [3. Instrucciones de instalación](#3-instrucciones-de-instalación)
-- [4. Instrucciones de ejecución](#4-instrucciones-de-ejecución)
-- [5. Parámetros ajustables](#5-parámetros-ajustables)
-- [6. Contador de vueltas y cronómetro](#6-contador-de-vueltas-y-cronómetro)
-- [7. Resultados](#7-resultados)
+Si nunca has visto Follow The Gap: es un algoritmo que no usa mapa ni planifica una ruta completa. En cada instante, mira lo que el LiDAR tiene enfrente y decide "hacia dónde hay más espacio libre", y hacia allá gira. Es reactivo, simple, y sorprendentemente efectivo para evitar obstáculos en tiempo real.
 
 ---
 
-## 1. Descripción del enfoque
+## 1. ¿Cómo funciona el enfoque? (Follow The Gap)
 
-El controlador implementa **Follow The Gap**, un algoritmo reactivo (sin mapa ni planificación global) que decide hacia dónde dirigir el carro únicamente a partir de la lectura instantánea del sensor LiDAR (`/scan`). La idea central es: *"dirígete hacia el espacio libre más amplio y profundo que tengas frente a ti"*.
+Para entender el código, primero hay que entender la idea. En cada lectura del LiDAR (tópico `/scan`), el nodo hace lo siguiente, en orden:
 
-El pipeline de decisión en cada ciclo del LiDAR es el siguiente:
+**Paso 1 — Limpiar los datos del LiDAR.**
+El LiDAR a veces entrega valores raros (`NaN`, `inf`). Antes de usar los datos, se limpian y se recortan a un rango máximo razonable (`max_range`).
 
-1. **Preprocesamiento del LiDAR** — limpieza de valores inválidos (`NaN`, `inf`) y recorte de distancias fuera de rango.
-2. **Disparity Extender** — detecta saltos abruptos de distancia entre rayos vecinos (bordes de obstáculos) y "engorda" artificialmente el obstáculo más cercano, evitando que el carro intente pasar rozando un borde delgado (p. ej. una mediana).
-3. **Limitación del campo de visión (FOV)** — se descartan los rayos que apuntan demasiado hacia los costados o atrás, evitando que el algoritmo elija un punto objetivo que obligue a un giro de 180°.
-4. **Burbuja de seguridad** — se anula (pone a cero) un rango de rayos alrededor del punto más cercano detectado, como margen de seguridad adicional.
-5. **Búsqueda del gap máximo** — se identifica el segmento contiguo de espacio libre más amplio dentro del campo de visión.
-6. **Selección del punto objetivo** — se calcula un punto dentro del gap como una combinación ponderada entre el **centro geométrico** del hueco (para estabilidad y trayectoria centrada) y el **punto más lejano** (para aprovechar al máximo el espacio libre).
-7. **Control de velocidad adaptativo** — se distingue entre:
-   - **Recta confirmada**: gap ancho (> 50°), profundo (> 4 m) y ángulo de giro casi nulo (< 5°) → velocidad máxima.
-   - **Curva / transición**: velocidad de crucero escalada según qué tan cerrado es el ángulo de giro requerido.
-8. **Publicación del comando** — se envía el ángulo de giro y la velocidad calculados al tópico `/drive` mediante un mensaje `AckermannDriveStamped`.
+**Paso 2 — "Engordar" los obstáculos cercanos (disparity extender).**
+Aquí está uno de los trucos clave del algoritmo. Si el LiDAR detecta un salto brusco entre dos rayos vecinos (por ejemplo, un rayo mide 1 m y el de al lado mide 5 m), eso significa que hay un borde de un obstáculo ahí. El problema es que si solo miras "espacio libre", el carro podría intentar pasar rozando ese borde. Para evitarlo, el código toma el valor más cercano de ese salto y lo "expande" varios rayos hacia el lado del espacio libre, simulando que el obstáculo es un poco más ancho de lo que realmente es. Así el carro le da más margen.
 
-Este enfoque permite que el vehículo navegue de forma autónoma sin colisiones, alcanzando alta velocidad en tramos rectos y reduciendo la velocidad de forma proporcional en curvas.
+**Paso 3 — Limitar el campo de visión (FOV).**
+No tiene sentido que el carro considere lo que hay a los costados o atrás — eso podría hacer que el algoritmo elija un "gap" que obligue a un giro de 180°. Por eso se recorta el LiDAR a un cono frontal (en mi caso, 85° hacia cada lado).
+
+**Paso 4 — Poner una burbuja de seguridad alrededor de lo más cercano.**
+Se busca el punto más cercano detectado y se anula (se pone en cero) un rango de rayos alrededor de él. Esto es una segunda capa de seguridad, además del disparity extender.
+
+**Paso 5 — Encontrar el gap más grande.**
+Con todo lo anterior ya aplicado, se busca el tramo contiguo de espacio libre más amplio dentro del campo de visión. Ese es el "gap".
+
+**Paso 6 — Elegir el punto objetivo dentro del gap.**
+Aquí no simplemente se apunta al punto más lejano ni tampoco solo al centro del gap — se hace una combinación de ambos (una especie de promedio ponderado). Apuntar solo al punto más lejano puede hacer que la trayectoria sea inestable; apuntar solo al centro puede ser demasiado conservador. La combinación da un resultado más estable en la práctica.
+
+**Paso 7 — Decidir la velocidad.**
+Si el gap es ancho, profundo y casi no hay que girar, se interpreta como una recta y se va a velocidad máxima. Si no, se usa una velocidad de crucero que se reduce mientras más cerrado sea el giro necesario.
+
+**Paso 8 — Publicar el comando.**
+Finalmente se publica el ángulo de giro y la velocidad calculados al tópico `/drive`, como un mensaje `AckermannDriveStamped`, que es lo que el simulador espera para mover el carro.
 
 ---
 
-## 2. Estructura del código
+## 2. Cómo está organizado el código
 
-El controlador se encuentra en:
+Todo el controlador vive en un solo archivo:
 
 ```
 src/controllers/controllers/gap_node.py
 ```
 
-### Clase principal: `ReactiveFollowGap(Node)`
+Es un nodo de ROS2 (`ReactiveFollowGap`, que hereda de `Node`). Si lo abres, vas a encontrar estos métodos, más o menos en el orden en que se usan:
 
-| Método | Función |
-|---|---|
-| `__init__` | Configura parámetros, suscripciones (`/scan`, `/ego_racecar/odom`) y el publicador (`/drive`). |
-| `preprocess_lidar(ranges)` | Limpia el array del LiDAR (NaN/inf, recorte de rango). |
-| `extend_disparities(ranges, angle_increment)` | Implementa el "disparity extender": detecta bordes y extiende obstáculos cercanos para evitar colisiones por bordes delgados. |
-| `limit_fov(ranges, angle_min, angle_increment, fov_deg)` | Limita el LiDAR a un cono frontal, evitando giros de 180°. |
-| `find_max_gap(free_space_ranges)` | Encuentra el segmento contiguo de espacio libre más amplio. |
-| `find_best_point(start_i, end_i, ranges)` | Calcula el punto objetivo dentro del gap (combinación centro + punto lejano). |
-| `lidar_callback(data)` | Callback principal: ejecuta el pipeline completo y publica el comando de manejo. |
-| `odom_callback(msg)` | Callback de odometría: implementa el contador de vueltas y cronómetro (ver sección 6). |
-| `main()` | Inicializa el nodo ROS2 y lo mantiene en ejecución (`rclpy.spin`). |
+- **`__init__`** — Aquí se configuran los parámetros del algoritmo y se crean las suscripciones (`/scan` para el LiDAR, `/ego_racecar/odom` para la posición del carro) y el publicador (`/drive`).
+- **`preprocess_lidar`** — Corresponde al Paso 1: limpia el array de distancias del LiDAR.
+- **`extend_disparities`** — Corresponde al Paso 2: el disparity extender.
+- **`limit_fov`** — Corresponde al Paso 3: recorta el LiDAR al cono frontal.
+- **`find_max_gap`** — Corresponde al Paso 5: encuentra el gap más grande.
+- **`find_best_point`** — Corresponde al Paso 6: calcula el punto objetivo dentro del gap.
+- **`lidar_callback`** — Es el método que se ejecuta cada vez que llega una lectura nueva del LiDAR. Aquí se encadenan todos los pasos anteriores (incluyendo la burbuja de seguridad del Paso 4) y se decide la velocidad (Paso 7), y se publica el comando (Paso 8). Es básicamente el "director" que llama a todo lo demás en orden.
+- **`odom_callback`** — Este es independiente del pipeline de LiDAR. Se explica en la sección 4 (contador de vueltas y cronómetro).
+- **`main`** — Levanta el nodo de ROS2 y lo deja corriendo.
 
-### Tópicos utilizados
+En cuanto a tópicos, el nodo usa:
 
-| Tópico | Tipo de mensaje | Uso |
-|---|---|---|
-| `/scan` | `sensor_msgs/LaserScan` | Entrada — lectura del LiDAR |
-| `/ego_racecar/odom` | `nav_msgs/Odometry` | Entrada — posición del carro (conteo de vueltas) |
-| `/drive` | `ackermann_msgs/AckermannDriveStamped` | Salida — comando de ángulo y velocidad |
+- `/scan` (`sensor_msgs/LaserScan`) — entrada, lectura del LiDAR.
+- `/ego_racecar/odom` (`nav_msgs/Odometry`) — entrada, posición del carro (para contar vueltas).
+- `/drive` (`ackermann_msgs/AckermannDriveStamped`) — salida, el comando de manejo.
 
 ---
 
-## 3. Instrucciones de instalación
+## 3. Cómo instalar todo desde cero
 
-### Requisitos previos
-- Ubuntu 22.04
-- ROS2 Humble instalado y funcionando
+Vas a necesitar Ubuntu 22.04 con ROS2 Humble ya instalado y funcionando. Con eso listo, sigue estos pasos en orden.
 
-### Pasos
+**Primero, instala el F1TENTH Gym** (es la librería de física que usa el simulador):
 
 ```bash
-# 1. Instalar el F1TENTH Gym (libreria de fisica del simulador)
 cd $HOME
 git clone https://github.com/f1tenth/f1tenth_gym
 sudo apt install python3-pip
 cd f1tenth_gym && pip3 install -e .
+```
 
-# 2. Clonar este repositorio
+**Luego, clona este repositorio** (ya trae el controlador listo):
+
+```bash
 cd $HOME
 git clone https://github.com/Giobapena/f1tenth-follow-the-gap-brandshatch-VNT.git F1Tenth-Repository
+```
 
-# 3. Instalar dependencias de ROS2
+**Después, instala las dependencias de ROS2:**
+
+```bash
 cd ~/F1Tenth-Repository
 sudo apt install python3-rosdep2
 rosdep update
 source /opt/ros/humble/setup.bash
 rosdep install -i --from-path src --rosdistro humble -y
+```
 
-# 4. Compilar el workspace
+**Y compila el workspace:**
+
+```bash
 colcon build
 ```
 
-### Configuración del mapa (Brands Hatch)
+**Por último, descarga y configura el mapa de Brands Hatch:**
 
 ```bash
 cd ~/F1Tenth-Repository/src/f1tenth_gym_ros/maps
@@ -109,17 +110,21 @@ cp f1tenth_racetracks/BrandsHatch/BrandsHatch_map.yaml BrandsHatch/
 cp f1tenth_racetracks/BrandsHatch/BrandsHatch_map.png BrandsHatch/
 ```
 
-Editar `src/f1tenth_gym_ros/config/sim.yaml` y ajustar:
+Ahora abre `src/f1tenth_gym_ros/config/sim.yaml` y cambia la ruta del mapa por la tuya:
 
 ```yaml
 map_path: '/home/<tu_usuario>/F1Tenth-Repository/src/f1tenth_gym_ros/maps/BrandsHatch/BrandsHatch_map'
 ```
 
+Con esto ya tienes todo instalado y configurado.
+
 ---
 
-## 4. Instrucciones de ejecución
+## 4. Cómo ejecutarlo
 
-### Terminal 1 — Levantar el simulador
+Necesitas dos terminales abiertas al mismo tiempo.
+
+**En la primera terminal, levanta el simulador:**
 
 ```bash
 cd ~/F1Tenth-Repository
@@ -128,9 +133,9 @@ source install/setup.bash
 ros2 launch f1tenth_gym_ros gym_bridge_launch.py
 ```
 
-Esto abre RViz mostrando el carro sobre la pista de Brands Hatch.
+Esto abre RViz con el carro ya posicionado sobre la pista de Brands Hatch.
 
-### Terminal 2 — Ejecutar el controlador Follow The Gap
+**En la segunda terminal, corre el controlador:**
 
 ```bash
 cd ~/F1Tenth-Repository
@@ -139,36 +144,19 @@ source install/setup.bash
 ros2 run controllers gap_node
 ```
 
-El carro debería comenzar a moverse de forma autónoma, navegando la pista sin intervención manual.
+En cuanto lo ejecutes, el carro debería empezar a moverse solo, navegando la pista sin que tengas que tocar nada.
 
 ---
 
-## 5. Parámetros ajustables
+## 5. Contador de vueltas y cronómetro
 
-Todos los parámetros se encuentran al inicio de la clase o dentro de `lidar_callback`, y pueden ajustarse según la pista o el comportamiento deseado:
+Además del controlador de manejo, el nodo lleva un registro de vueltas y tiempos usando `/ego_racecar/odom` (la posición del carro). La lógica es sencilla:
 
-| Parámetro | Descripción | Valor usado |
-|---|---|---|
-| `bubble_radius` | Radio de seguridad alrededor del obstáculo más cercano | `0.5` m |
-| `car_half_width` | Medio ancho del carro (usado en disparity extender) | `0.25` m |
-| `disparity_threshold` | Diferencia mínima entre rayos para considerarla un borde | `0.25` m |
-| `fov_deg` | Campo de visión frontal considerado | `85°` |
-| `max_steering_angle` | Ángulo máximo de giro permitido | `34°` |
-| `max_speed` | Velocidad máxima en recta confirmada | `7.0` |
-| `cruise_speed` | Velocidad de crucero en curvas/transición | `4.5` |
-| `min_speed` | Velocidad mínima en curvas cerradas | `1.5` |
+1. En cuanto arranca el nodo, guarda la posición inicial del carro como la "línea de salida".
+2. Cuando el carro se aleja lo suficiente de esa línea (`leave_zone_radius`), el nodo entiende que ya salió a dar la vuelta.
+3. Cuando el carro vuelve a estar cerca de la línea de salida (`start_zone_radius`) después de haberse alejado, se cuenta una vuelta completa y se calcula cuánto tiempo tomó desde la vuelta anterior.
 
----
-
-## 6. Contador de vueltas y cronómetro
-
-El nodo se suscribe a `/ego_racecar/odom` para obtener la posición (x, y) del carro en tiempo real. La lógica implementada es:
-
-1. Se registra la posición inicial del carro como **línea de salida**.
-2. Se marca cuando el carro se **aleja** lo suficiente de esa posición (`leave_zone_radius`), confirmando que está dando la vuelta.
-3. Cuando el carro **regresa** cerca de la línea de salida (`start_zone_radius`) después de haberse alejado, se cuenta una vuelta y se calcula el tiempo transcurrido desde la vuelta anterior.
-
-Cada vuelta completada se muestra en la terminal como evidencia:
+Cada vez que se completa una vuelta, se imprime en la terminal, así:
 
 ```
 [INFO] [reactive_node]: VUELTA 1 completada - Tiempo: 105.34 segundos
@@ -177,14 +165,25 @@ Cada vuelta completada se muestra en la terminal como evidencia:
 
 ---
 
-## 7. Resultados
+## 6. Si quieres ajustar el comportamiento
 
-- El controlador completa vueltas consecutivas en la pista Brands Hatch sin colisionar.
-- Alcanza velocidad máxima en tramos rectos confirmados y reduce velocidad de forma proporcional en curvas.
-- El tiempo de vuelta y el conteo de vueltas se registran automáticamente y se muestran por consola durante la ejecución.
+Todos estos valores están al inicio de la clase o dentro de `lidar_callback`, y los puedes tocar para adaptar el controlador a otra pista o a un estilo de manejo distinto:
+
+| Parámetro | Qué controla | Valor que usé |
+|---|---|---|
+| `bubble_radius` | Qué tan grande es la zona de seguridad alrededor del obstáculo más cercano | `0.5` m |
+| `car_half_width` | Medio ancho del carro (lo usa el disparity extender) | `0.25` m |
+| `disparity_threshold` | Qué tan grande debe ser un salto entre rayos para considerarlo un borde | `0.25` m |
+| `fov_deg` | Qué tan amplio es el cono de visión frontal | `85°` |
+| `max_steering_angle` | Ángulo máximo de giro permitido | `34°` |
+| `max_speed` | Velocidad en recta confirmada | `7.0` |
+| `cruise_speed` | Velocidad de crucero en curvas | `4.5` |
+| `min_speed` | Velocidad mínima en curvas cerradas | `1.5` |
+
+Por ejemplo, si notas que el carro choca en curvas cerradas, puedes subir un poco `bubble_radius` o bajar `max_speed`. Si lo ves demasiado lento en rectas, puedes subir `max_speed` o relajar la condición de "recta confirmada" dentro de `lidar_callback`.
 
 ---
 
 ## Autor
 
-Proyecto desarrollado para el curso de Vehículos Autónomos — Controlador reactivo Follow The Gap sobre F1TENTH / ROS2 Humble.
+Giovanny Baño — Proyecto del curso de Vehículos Autónomos, controlador Follow The Gap sobre F1TENTH / ROS2 Humble, pista Brands Hatch.
