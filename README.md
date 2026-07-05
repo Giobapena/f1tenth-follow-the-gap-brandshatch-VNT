@@ -1,9 +1,5 @@
 # Tutorial: Controlador Follow The Gap para F1TENTH (pista Brands Hatch)
 
-Este tutorial te explica cómo funciona mi controlador reactivo **Follow The Gap (FTG)**, cómo está armado el código y cómo ponerlo a correr en el simulador de F1TENTH, sobre la pista **Brands Hatch**. Fue desarrollado para el proyecto del curso de Vehículos Autónomos.
-
-Si nunca has visto Follow The Gap: es un algoritmo que no usa mapa ni planifica una ruta completa. En cada instante, mira lo que el LiDAR tiene enfrente y decide "hacia dónde hay más espacio libre", y hacia allá gira. Es reactivo, simple, y sorprendentemente efectivo para evitar obstáculos en tiempo real.
-
 ---
 
 ## 1. ¿Cómo funciona el enfoque? (Follow The Gap)
@@ -186,4 +182,4 @@ Por ejemplo, si notas que el carro choca en curvas cerradas, puedes subir un poc
 
 ## Autor
 
-Giovanny Baño — Proyecto del curso de Vehículos Autónomos, controlador Follow The Gap sobre F1TENTH / ROS2 Humble, pista Brands Hatch.
+Giovanny Baño — Proyecto de Vehículos no tripulados
