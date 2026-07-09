@@ -144,20 +144,175 @@ En cuanto lo ejecutes, el carro debería empezar a moverse solo, navegando la pi
 
 ---
 
-## 5. Contador de vueltas y cronómetro
+## 5. Incorporación de un oponente y obstáculos en la pista
 
-Además del controlador de manejo, el nodo lleva un registro de vueltas y tiempos usando `/ego_racecar/odom` (la posición del carro). La lógica es sencilla:
+Para evaluar el comportamiento del controlador en un escenario más cercano a una carrera real, se añadió un vehículo oponente y obstáculos estáticos dentro del mapa de Brands Hatch.
 
-1. En cuanto arranca el nodo, guarda la posición inicial del carro como la "línea de salida".
-2. Cuando el carro se aleja lo suficiente de esa línea (`leave_zone_radius`), el nodo entiende que ya salió a dar la vuelta.
-3. Cuando el carro vuelve a estar cerca de la línea de salida (`start_zone_radius`) después de haberse alejado, se cuenta una vuelta completa y se calcula cuánto tiempo tomó desde la vuelta anterior.
+Debido a limitaciones del simulador, únicamente fue posible trabajar con **un solo oponente simultáneamente**. La implementación se realizó mediante un nodo independiente llamado `opp_node`, mientras que el controlador principal del vehículo autónomo se mantiene dentro de `gap_node`.
 
-Cada vez que se completa una vuelta, se imprime en la terminal, así:
+La estructura final de los nodos es:
 
 ```
-[INFO] [reactive_node]: VUELTA 1 completada - Tiempo: 105.34 segundos
-[INFO] [reactive_node]: VUELTA 2 completada - Tiempo: 98.21 segundos
+src/controllers/controllers/
+│
+├── gap_node.py      # Controlador Follow The Gap del vehículo autónomo
+│
+└── opp_node.py      # Controlador del vehículo oponente
 ```
+
+---
+
+### 5.1 Controlador del vehículo autónomo (`gap_node.py`)
+
+El archivo `gap_node.py` mantiene toda la lógica del algoritmo **Follow The Gap** descrita anteriormente.
+
+Sus principales funciones son:
+
+- Recibir las lecturas del LiDAR mediante `/scan`.
+- Procesar los obstáculos detectados.
+- Encontrar el espacio libre más grande (`maximum gap`).
+- Calcular el punto objetivo dentro del espacio disponible.
+- Publicar los comandos de dirección y velocidad mediante `/drive`.
+
+El vehículo autónomo no tiene información directa del oponente, sino que lo interpreta como un obstáculo más debido a la información proporcionada por el LiDAR.
+
+---
+
+### 5.2 Controlador del oponente (`opp_node.py`)
+
+El nodo `opp_node.py` fue creado como un controlador independiente encargado únicamente del movimiento del vehículo oponente.
+
+A diferencia del vehículo principal, este nodo no utiliza Follow The Gap, sino una trayectoria y velocidad predefinidas para recorrer la pista.
+
+Su objetivo es generar una condición de adelantamiento, por lo que la velocidad del oponente debe ser menor que la del vehículo autónomo.
+
+Configuración utilizada:
+
+| Vehículo | Nodo | Velocidad aproximada |
+|----------|------|----------------------|
+| Vehículo autónomo | `gap_node` | 7.0 m/s |
+| Vehículo oponente | `opp_node` | 2.0 - 3.0 m/s |
+
+La diferencia de velocidades permite que el vehículo autónomo alcance progresivamente al oponente y tenga que realizar una maniobra evasiva utilizando únicamente la información del LiDAR.
+
+---
+
+### 5.3 Comunicación entre nodos
+
+El funcionamiento del escenario se basa en la siguiente interacción:
+
+```
+              ┌─────────────────┐
+              │   opp_node.py   │
+              │   Oponente      │
+              └────────┬────────┘
+                       │
+                       ▼
+              Vehículo detectado
+              como obstáculo móvil
+                       │
+                       ▼
+              ┌─────────────────┐
+              │     LiDAR       │
+              │    /scan        │
+              └────────┬────────┘
+                       │
+                       ▼
+              ┌─────────────────┐
+              │   gap_node.py   │
+              │ Follow The Gap  │
+              └────────┬────────┘
+                       │
+                       ▼
+              ┌─────────────────┐
+              │     /drive      │
+              │ Dirección +     │
+              │ velocidad       │
+              └─────────────────┘
+```
+
+El controlador principal mantiene su comportamiento reactivo, ya que no diferencia entre un obstáculo fijo y el vehículo oponente. Toda la decisión de adelantamiento se realiza mediante el procesamiento de los datos del LiDAR.
+
+---
+
+### 5.4 Creación de obstáculos mediante GIMP
+
+Para aumentar la complejidad del circuito también se añadieron obstáculos estáticos utilizando el software **GIMP**.
+
+El procedimiento realizado fue:
+
+1. Abrir el mapa original de Brands Hatch:
+
+```bash
+BrandsHatch_map.png
+```
+
+2. Crear nuevas capas dentro de GIMP para agregar obstáculos sin modificar la imagen original.
+
+3. Dibujar obstáculos en diferentes posiciones de la pista.
+
+4. Mantener la misma resolución del mapa original para evitar problemas de escala dentro del simulador.
+
+5. Exportar nuevamente el mapa modificado en formato `.png`.
+
+6. Actualizar el archivo de configuración del simulador:
+
+```yaml
+map_path: '/home/<usuario>/F1Tenth-Repository/src/f1tenth_gym_ros/maps/BrandsHatch/BrandsHatch_map'
+```
+
+Los obstáculos fueron utilizados para probar la capacidad del controlador frente a:
+
+- Reducción del espacio disponible.
+- Cambios repentinos de trayectoria.
+- Obstáculos durante zonas de alta velocidad.
+- Maniobras evasivas antes de realizar un adelantamiento.
+
+---
+
+### 5.5 Ejecución con oponente y obstáculos
+
+Para ejecutar la simulación completa se requieren tres terminales:
+
+#### Terminal 1 — Simulador
+
+```bash
+cd ~/F1Tenth-Repository
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+ros2 launch f1tenth_gym_ros gym_bridge_launch.py
+```
+
+---
+
+#### Terminal 2 — Vehículo autónomo Follow The Gap
+
+```bash
+cd ~/F1Tenth-Repository
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+ros2 run controllers gap_node
+```
+
+---
+
+#### Terminal 3 — Vehículo oponente
+
+```bash
+cd ~/F1Tenth-Repository
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+ros2 run controllers opp_node
+```
+
+El comportamiento esperado es:
+
+1. El vehículo autónomo inicia la navegación utilizando Follow The Gap.
+2. El oponente circula por delante a menor velocidad.
+3. El LiDAR detecta al oponente y los obstáculos del circuito.
+4. El algoritmo calcula nuevamente el espacio libre disponible.
+5. El vehículo autónomo modifica su trayectoria para evitar colisiones y realizar el adelantamiento cuando existe suficiente espacio.
+
 
 ---
 
