@@ -3,9 +3,9 @@
 <package format="3">
   <name>controllers</name>
   <version>0.0.0</version>
-  <description>Controlador reactivo Follow The Gap para F1TENTH (pista Brands Hatch)</description>
-  <maintainer email="giovanny.bano@espol.edu.ec">Giovanny Baño</maintainer>
-  <license>MIT</license>
+  <description>TODO: Package description</description>
+  <maintainer email="israel@todo.todo">israel</maintainer>
+  <license>TODO: License declaration</license>
 
   <depend>rclpy</depend>
   <depend>std_msgs</depend>
@@ -15,6 +15,7 @@
   <depend>nav_msgs</depend>
   <depend>geometry_msgs</depend>
   <depend>visualization_msgs</depend>
+  
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>
