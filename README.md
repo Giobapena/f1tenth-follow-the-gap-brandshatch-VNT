@@ -334,6 +334,23 @@ Todos estos valores están al inicio de la clase o dentro de `lidar_callback`, y
 Por ejemplo, si notas que el carro choca en curvas cerradas, puedes subir un poco `bubble_radius` o bajar `max_speed`. Si lo ves demasiado lento en rectas, puedes subir `max_speed` o relajar la condición de "recta confirmada" dentro de `lidar_callback`.
 
 ---
+## Evidencias
+
+Aqui se abarca las 2 partes del proyecto por ende se anexa la evidencias en video de ambas partes: 
+
+#Parte 1
+https://youtu.be/189tALN2NRA
+
+https://youtu.be/c6YX8TQJHnM
+
+
+#Parte 2
+https://youtu.be/5UlIYakVykw
+
+https://youtu.be/Yl5KpyXOPcE
+
+https://youtu.be/N5s5oah5uRc
+
 
 ## Autor
 
