@@ -339,19 +339,21 @@ Por ejemplo, si notas que el carro choca en curvas cerradas, puedes subir un poc
 Aqui se abarca las 2 partes del proyecto por ende se anexa la evidencias en video de ambas partes: 
 
 #Parte 1
-https://youtu.be/189tALN2NRA
 
-https://youtu.be/c6YX8TQJHnM
+1.1 https://youtu.be/189tALN2NRA
+
+1.2 https://youtu.be/c6YX8TQJHnM
 
 
 #Parte 2
-https://youtu.be/5UlIYakVykw
 
-https://youtu.be/Yl5KpyXOPcE
+2.1 https://youtu.be/5UlIYakVykw
 
-https://youtu.be/N5s5oah5uRc
+2.2 https://youtu.be/Yl5KpyXOPcE
+
+2.3 https://youtu.be/N5s5oah5uRc
 
 
-## Autor
+---
 
 Giovanny Baño — Proyecto de Vehículos no tripulados
