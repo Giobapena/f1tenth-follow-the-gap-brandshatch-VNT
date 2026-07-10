@@ -10,7 +10,7 @@ Para entender el código, primero hay que entender la idea. En cada lectura del 
 El LiDAR a veces entrega valores raros (`NaN`, `inf`). Antes de usar los datos, se limpian y se recortan a un rango máximo razonable (`max_range`).
 
 **Paso 2 — "Engordar" los obstáculos cercanos (disparity extender).**
-Aquí está uno de los trucos clave del algoritmo. Si el LiDAR detecta un salto brusco entre dos rayos vecinos (por ejemplo, un rayo mide 1 m y el de al lado mide 5 m), eso significa que hay un borde de un obstáculo ahí. El problema es que si solo miras "espacio libre", el carro podría intentar pasar rozando ese borde. Para evitarlo, el código toma el valor más cercano de ese salto y lo "expande" varios rayos hacia el lado del espacio libre, simulando que el obstáculo es un poco más ancho de lo que realmente es. Así el carro le da más margen.
+Si el LiDAR detecta un salto brusco entre dos rayos vecinos (por ejemplo, un rayo mide 1 m y el de al lado mide 5 m), eso significa que hay un borde de un obstáculo ahí. El problema es que si solo miras "espacio libre", el carro podría intentar pasar rozando ese borde. Para evitarlo, el código toma el valor más cercano de ese salto y lo "expande" varios rayos hacia el lado del espacio libre, simulando que el obstáculo es un poco más ancho de lo que realmente es. Así el carro le da más margen.
 
 **Paso 3 — Limitar el campo de visión (FOV).**
 No tiene sentido que el carro considere lo que hay a los costados o atrás — eso podría hacer que el algoritmo elija un "gap" que obligue a un giro de 180°. Por eso se recorta el LiDAR a un cono frontal (en mi caso, 85° hacia cada lado).
